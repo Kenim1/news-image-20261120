@@ -1,17 +1,19 @@
-// News-image entry for 20 November 2026 (Node 22, standard library only).
-// The image is drawn by draw.py and shipped as entry.png beside this file;
-// the program copies it to /output/entry.png, deterministically, twice.
+// 20 November 2026 news-image entry (Node 22, standard library only).
+// draw.py renders entry.png; this program writes those exact bytes to
+// the output directory, so the grader's two runs produce identical output.
 //
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 
-import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const entry = new URL('./entry.png', import.meta.url);
-if (!existsSync(entry)) {
-  throw new Error('entry.png is missing beside main.ts');
+// The bytes are copied unchanged, so the output is deterministic:
+// the grader may run this program twice and compare the two files.
+const source = new URL('./entry.png', import.meta.url);
+if (!existsSync(source)) {
+  throw new Error('entry.png is missing beside main.ts; run python3 draw.py first');
 }
 const outDir = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 mkdirSync(outDir, { recursive: true });
-copyFileSync(entry, join(outDir, 'entry.png'));
+writeFileSync(join(outDir, 'entry.png'), readFileSync(source));

@@ -1,133 +1,143 @@
 #!/usr/bin/env python3
-"""Draw the 20 November 2026 world-news image.
+"""Render the 20 November 2026 world-news front page as a PNG.
 
-A clean newspaper front page, drawn with Pillow only: no photos, no
-AI-generated faces, so every word stays crisp and legible.
-Output: 1024x1024 PNG, well under the 1 MiB limit.
+Every story on the page comes from the 20 November research slate:
+the Shenzhen trilateral talks, the ICJ Rohingya ruling, the Anthropic
+IPO, the third Kerch Bridge strike, the Riyadh PIF tower attack, and
+the market / climate / cyclone strip. Only Pillow is used, and the
+page is drawn from flat shapes and text, so the words stay sharp.
+The output is a 1024x1024 PNG under the 1 MiB limit.
 """
-import math
 from PIL import Image, ImageDraw, ImageFont
 
-W, H = 1024, 1024
-OUT = "entry.png"
+PAGE = 1024
+MARGIN = 30
+OUT_PATH = "entry.png"
 
-SERIF = "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf"
-SANS = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-SANS_B = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+FONT_DIR = "/usr/share/fonts/truetype/dejavu"
+SERIF_BOLD = f"{FONT_DIR}/DejaVuSerif-Bold.ttf"
+SANS = f"{FONT_DIR}/DejaVuSans.ttf"
+SANS_BOLD = f"{FONT_DIR}/DejaVuSans-Bold.ttf"
 
-NAVY = (15, 42, 68)
-INK = (18, 24, 32)
-GREY = (84, 96, 110)
-LIGHT = (234, 241, 248)
-CARD = (255, 255, 255)
-RED = (178, 34, 34)
-BLUE = (24, 90, 160)
-TEAL = (14, 122, 110)
-PURPLE = (94, 58, 140)
-AMBER = (176, 112, 8)
-RULE = (200, 210, 220)
+NAVY = "#0f2a44"
+INK = "#121820"
+MUTED = "#54606e"
+PAPER = "#f8f9fb"
+CARD_BG = "#ffffff"
+PALE = "#eaf1f8"
+GOLD = "#ffd65a"
+CRIMSON = "#b22222"
+AZURE = "#185aa0"
+TEAL = "#0e7a6e"
+VIOLET = "#5e3a8c"
+OCHRE = "#b07008"
+EDGE = "#c8d2dc"
 
 
-def font(path, size):
+def load_font(bold, size, serif=False):
+    path = SERIF_BOLD if serif else (SANS_BOLD if bold else SANS)
     return ImageFont.truetype(path, size)
 
 
-def wrap(draw, text, fnt, max_w):
-    """Greedy word wrap by measured width."""
-    words, lines, cur = text.split(), [], ""
-    for w in words:
-        trial = (cur + " " + w).strip()
-        if draw.textlength(trial, font=fnt) <= max_w:
-            cur = trial
+def wrap_text(canvas, text, font, width):
+    """Split text into lines that fit width, measured with the font."""
+    words = text.split()
+    lines, current = [], ""
+    for word in words:
+        candidate = f"{current} {word}".strip()
+        if canvas.textlength(candidate, font=font) <= width:
+            current = candidate
         else:
-            if cur:
-                lines.append(cur)
-            cur = w
-    if cur:
-        lines.append(cur)
+            if current:
+                lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
     return lines
 
 
-def para(draw, x, y, text, fnt, color, max_w, leading):
-    for line in wrap(draw, text, fnt, max_w):
-        draw.text((x, y), line, font=fnt, fill=color)
-        y += leading
+def text_block(canvas, x, y, text, size, colour, width, gap, bold=False):
+    """Draw a wrapped paragraph; return the y below its last line."""
+    face = load_font(bold, size)
+    for line in wrap_text(canvas, text, face, width):
+        canvas.text((x, y), line, font=face, fill=colour)
+        y += gap
     return y
 
 
-def kicker(draw, x, y, text, color):
-    f = font(SANS_B, 20)
-    draw.text((x, y), text, font=f, fill=color)
+def section_label(canvas, x, y, text, colour):
+    canvas.text((x, y), text, font=load_font(True, 20), fill=colour)
     return y + 28
 
 
-def headline(draw, x, y, text, max_w, size=28, leading=34):
-    f = font(SANS_B, size)
-    for line in wrap(draw, text, f, max_w):
-        draw.text((x, y), line, font=f, fill=INK)
-        y += leading
+def story_title(canvas, x, y, text, width, size=24, gap=29):
+    face = load_font(True, size)
+    for line in wrap_text(canvas, text, face, width):
+        canvas.text((x, y), line, font=face, fill=INK)
+        y += gap
     return y
 
 
-def flag(d, x, y, w, h, kind, label):
-    """A flat flag swatch with its country name beside it in bold."""
+def flag_chip(canvas, x, y, kind, name):
+    """Flat flag swatch, 130x44, with the country name beside it."""
+    w, h = 130, 44
     if kind == "china":
-        d.rectangle([x, y, x + w, y + h], fill=(222, 41, 16))
-        d.text((x + 16, y + h // 2 - 8), "*", font=font(SANS_B, 26),
-               fill=(255, 214, 90))
+        canvas.rectangle([x, y, x + w, y + h], fill="#de2910")
+        canvas.text((x + 16, y + h // 2 - 8), "*",
+                    font=load_font(True, 26), fill=GOLD)
     elif kind == "usa":
-        d.rectangle([x, y, x + w, y + h], fill=NAVY)
-        d.rectangle([x, y + h - 10, x + w, y + h], fill=(178, 34, 34))
-        d.rectangle([x, y, x + w, y + 10], fill=(178, 34, 34))
-    else:  # russia
-        for i, c in enumerate(((255, 255, 255), (0, 57, 166), (213, 0, 50))):
-            d.rectangle([x, y + i * h // 3, x + w, y + (i + 1) * h // 3], fill=c)
-        d.rectangle([x, y, x + w, y + h], outline=(150, 160, 170), width=2)
-    d.text((x + w + 14, y + h // 2 - 13), label, font=font(SANS_B, 22), fill=INK)
+        canvas.rectangle([x, y, x + w, y + h], fill=NAVY)
+        canvas.rectangle([x, y, x + w, y + 10], fill=CRIMSON)
+        canvas.rectangle([x, y + h - 10, x + w, y + h], fill=CRIMSON)
+    else:
+        for i, shade in enumerate(("#ffffff", "#0039a6", "#d50032")):
+            canvas.rectangle([x, y + i * h // 3, x + w, y + (i + 1) * h // 3],
+                             fill=shade)
+        canvas.rectangle([x, y, x + w, y + h], outline="#96a0aa", width=2)
+    canvas.text((x + w + 14, y + h // 2 - 13), name,
+                font=load_font(True, 22), fill=INK)
 
 
-def main():
-    img = Image.new("RGB", (W, H), (248, 249, 251))
-    d = ImageDraw.Draw(img)
-    M = 28  # margin
+def masthead(canvas):
+    canvas.rectangle([0, 0, PAGE, 158], fill=NAVY)
+    canvas.text((MARGIN, 16), "THE WORLD IN ONE DAY  •  WORLD NEWS",
+                font=load_font(True, 22), fill=GOLD)
+    canvas.text((MARGIN, 48), "FRIDAY 20 NOVEMBER 2026",
+                font=load_font(True, 46, serif=True), fill="#ffffff")
+    canvas.text((MARGIN, 108), "One day. Seven stories. The world, in a single picture.",
+                font=load_font(False, 24), fill="#cddceb")
+    canvas.rectangle([0, 158, PAGE, 164], fill=GOLD)
 
-    # ---------- masthead ----------
-    d.rectangle([0, 0, W, 158], fill=NAVY)
-    d.text((M, 16), "THE WORLD IN ONE DAY  •  WORLD NEWS",
-           font=font(SANS_B, 22), fill=(255, 214, 90))
-    d.text((M, 48), "FRIDAY 20 NOVEMBER 2026",
-           font=font(SERIF, 46), fill=(255, 255, 255))
-    d.text((M, 108), "One day. Seven stories. The world, in a single picture.",
-           font=font(SANS, 24), fill=(205, 220, 235))
-    d.rectangle([0, 158, W, 164], fill=(255, 214, 90))
 
-    # ---------- hero: the Shenzhen trilateral talks ----------
-    y0, y1 = 176, 424
-    d.rectangle([M, y0, W - M, y1], fill=CARD, outline=RULE, width=2)
-    d.rectangle([M, y0, W - M, y0 + 6], fill=RED)
-    hx, hy = M + 22, y0 + 18
-    hy = kicker(d, hx, hy, "DIPLOMACY  •  APEC, SHENZHEN, CHINA", RED)
-    hy = headline(d, hx, hy + 2, "TRUMP, XI AND PUTIN HOLD FIRST THREE-WAY TALKS",
-                  max_w=560, size=32, leading=36)
-    hy = para(d, hx, hy + 8,
-              "A four-point Declaration toward Peace: UN reform, energy, "
-              "immunity and nuclear-risk dialogue.",
-              font(SANS, 22), INK, 600, 27)
-    hy = para(d, hx, hy + 6,
-              "Zelensky: no deal without Kyiv. 40 partners pledge "
-              "air-defence and energy aid.",
-              font(SANS, 22), INK, 600, 27)
-    # flags on the right, with the country name beside each swatch
-    fx, fy = 668, y0 + 52
-    for kind, label in (("china", "CHINA"), ("usa", "USA"), ("russia", "RUSSIA")):
-        flag(d, fx, fy, 130, 44, kind, label)
+def hero(canvas):
+    top, bottom = 176, 424
+    canvas.rectangle([MARGIN, top, PAGE - MARGIN, bottom],
+                     fill=CARD_BG, outline=EDGE, width=2)
+    canvas.rectangle([MARGIN, top, PAGE - MARGIN, top + 6], fill=CRIMSON)
+    x, y = MARGIN + 22, top + 18
+    y = section_label(canvas, x, y, "DIPLOMACY  •  APEC, SHENZHEN, CHINA", CRIMSON)
+    y = story_title(canvas, x, y + 2,
+                    "TRUMP, XI AND PUTIN HOLD FIRST THREE-WAY TALKS",
+                    560, size=32, gap=36)
+    y = text_block(canvas, x, y + 8,
+                   "A four-point Declaration toward Peace: UN reform, energy, "
+                   "immunity and nuclear-risk dialogue.",
+                   22, INK, 600, 27)
+    text_block(canvas, x, y + 6,
+               "Zelensky: no deal without Kyiv. 40 partners pledge "
+               "air-defence and energy aid.",
+               22, INK, 600, 27)
+    fx, fy = 668, top + 52
+    for kind, name in (("china", "CHINA"), ("usa", "USA"), ("russia", "RUSSIA")):
+        flag_chip(canvas, fx, fy, kind, name)
         fy += 54
 
-    # ---------- 2 x 2 grid ----------
-    gy0 = 436
-    cw, ch, gap = 474, 186, 16
-    cells = [
-        ("JUSTICE  •  THE HAGUE", RED,
+
+def grid(canvas):
+    top = 436
+    cell_w, cell_h, gap = 474, 186, 16
+    stories = [
+        ("JUSTICE  •  THE HAGUE", CRIMSON,
          "ICJ: MYANMAR COMMITTED GENOCIDE AGAINST ROHINGYA",
          "The court rules 9-6 on the 2017 crackdown in northern "
          "Rakhine. A landmark verdict for the Rohingya."),
@@ -135,52 +145,68 @@ def main():
          "ANTHROPIC GOES PUBLIC: SHARES JUMP 17% ON DEBUT",
          "The first frontier AI company to list, on Nasdaq as ANT. "
          "Shares open at $111.50 after an $81.3bn IPO."),
-        ("UKRAINE  •  EUROPE", BLUE,
+        ("UKRAINE  •  EUROPE", AZURE,
          "KERCH BRIDGE HIT FOR A THIRD TIME",
          "Neptune missiles strike the Crimean Bridge again, briefly "
          "halting trains. Putin vows a far more painful response."),
-        ("MIDDLE EAST  •  THE GULF", PURPLE,
+        ("MIDDLE EAST  •  THE GULF", VIOLET,
          "HOUTHI STRIKE DAMAGES RIYADH'S PIF TOWER",
          "The 80-storey tower's windows are blown out; no injuries. "
          "Strikes claimed on four Saudi targets; Senate rejects "
          "war powers, 51-48."),
     ]
-    for i, (kick, color, head, body) in enumerate(cells):
-        cx = M + (i % 2) * (cw + gap)
-        cy = gy0 + (i // 2) * (ch + gap)
-        d.rectangle([cx, cy, cx + cw, cy + ch], fill=CARD, outline=RULE, width=2)
-        d.rectangle([cx, cy, cx + cw, cy + 6], fill=color)
+    for i, (label, colour, title, body) in enumerate(stories):
+        cx = MARGIN + (i % 2) * (cell_w + gap)
+        cy = top + (i // 2) * (cell_h + gap)
+        canvas.rectangle([cx, cy, cx + cell_w, cy + cell_h],
+                         fill=CARD_BG, outline=EDGE, width=2)
+        canvas.rectangle([cx, cy, cx + cell_w, cy + 6], fill=colour)
         tx, ty = cx + 18, cy + 16
-        ty = kicker(d, tx, ty, kick, color)
-        ty = headline(d, tx, ty + 2, head, max_w=cw - 36, size=24, leading=29)
-        para(d, tx, ty + 8, body, font(SANS, 18), INK, cw - 36, 24)
+        ty = section_label(canvas, tx, ty, label, colour)
+        ty = story_title(canvas, tx, ty + 2, title, cell_w - 36)
+        text_block(canvas, tx, ty + 8, body, 18, INK, cell_w - 36, 24)
 
-    # ---------- bottom strip: markets, climate, weather ----------
-    by0, by1 = 840, 960
-    d.rectangle([M, by0, W - M, by1], fill=LIGHT, outline=RULE, width=2)
-    strips = [
-        ("MARKETS  •  DOW 49,097", RED,
+
+def strip(canvas):
+    top, bottom = 840, 960
+    canvas.rectangle([MARGIN, top, PAGE - MARGIN, bottom],
+                     fill=PALE, outline=EDGE, width=2)
+    items = [
+        ("MARKETS  •  DOW 49,097", CRIMSON,
          "Dow falls below 50,000 in an AI selloff; S&P -2.02%, Nasdaq -2.25%."),
         ("CLIMATE  •  COP31", TEAL,
          "Draft drops calls to phase out fossil fuels as talks continue."),
-        ("WEATHER  •  AKVAN", AMBER,
+        ("WEATHER  •  AKVAN", OCHRE,
          "Storm nears India's east coast; Andhra and Odisha landfall due, trains cancelled."),
     ]
-    sw = (W - 2 * M - 2 * 18) // 3
-    for i, (kick, color, body) in enumerate(strips):
-        sx = M + 18 + i * (sw + 18)
+    col_w = (PAGE - 2 * MARGIN - 2 * 18) // 3
+    for i, (label, colour, body) in enumerate(items):
+        sx = MARGIN + 18 + i * (col_w + 18)
         if i:
-            d.line([(sx - 9, by0 + 14), (sx - 9, by1 - 14)], fill=RULE, width=2)
-        d.text((sx, by0 + 12), kick, font=font(SANS_B, 19), fill=color)
-        para(d, sx, by0 + 42, body, font(SANS, 18), INK, sw - 12, 23)
+            canvas.line([(sx - 9, top + 14), (sx - 9, bottom - 14)],
+                        fill=EDGE, width=2)
+        canvas.text((sx, top + 12), label, font=load_font(True, 19), fill=colour)
+        text_block(canvas, sx, top + 42, body, 18, INK, col_w - 12, 23)
 
-    # ---------- footer ----------
-    d.text((M, 976), "All events reported on Friday 20 November 2026  •  AP, Reuters, IMD",
-           font=font(SANS, 18), fill=GREY)
-    d.text((W - M - 118, 976), "20 NOV 2026", font=font(SANS_B, 18), fill=NAVY)
 
-    img.save(OUT, "PNG", optimize=True)
-    print(f"saved {OUT}: {img.size}")
+def footer(canvas):
+    canvas.text((MARGIN, 976),
+                "All events reported on Friday 20 November 2026  •  AP, Reuters, IMD",
+                font=load_font(False, 18), fill=MUTED)
+    canvas.text((PAGE - MARGIN - 118, 976), "20 NOV 2026",
+                font=load_font(True, 18), fill=NAVY)
+
+
+def main():
+    page = Image.new("RGB", (PAGE, PAGE), PAPER)
+    canvas = ImageDraw.Draw(page)
+    masthead(canvas)
+    hero(canvas)
+    grid(canvas)
+    strip(canvas)
+    footer(canvas)
+    page.save(OUT_PATH, "PNG", optimize=True)
+    print(f"saved {OUT_PATH}: {page.size}")
 
 
 if __name__ == "__main__":
